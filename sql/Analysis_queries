@@ -1,0 +1,4 @@
+SELECT * from water_table
+select min(Date_ID) from SourceCarsData
+SELECT COUNT(*) FROM SourceCarsData WHERE DATE_ID > 'DT00000'
+SELECT * FROM SourceCarsData
