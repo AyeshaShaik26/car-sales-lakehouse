@@ -1,0 +1,7 @@
+create table water_table
+(
+last_load VARCHAR(200)
+)
+
+INSERT INTO WATER_TABLE
+VALUES('DT00000')
