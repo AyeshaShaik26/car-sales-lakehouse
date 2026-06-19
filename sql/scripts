@@ -1,1 +1,11 @@
-
+CREATE TABLE SourceCarsData (
+    Branch_ID VARCHAR(200),
+    Dealer_ID VARCHAR(200),
+    Model_ID VARCHAR(200),
+    Revenue BIGNINT,
+    UnitsSold INT,
+    Date_ID VARCHAR(200),
+    BranchName VARCHAR(200),
+    DealerName VARCHAR(200),
+    ProductName VARCHAR(200)
+);
