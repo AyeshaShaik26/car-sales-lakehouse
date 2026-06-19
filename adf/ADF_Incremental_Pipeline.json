@@ -1,0 +1,368 @@
+{
+    "name": "Incremental_load_pipeline",
+    "properties": {
+        "activities": [
+            {
+                "name": "Incremental_",
+                "type": "Copy",
+                "dependsOn": [
+                    {
+                        "activity": "last_load_date",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "Current_load_processed_date",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": {
+                            "value": "select * from dbo.SourceCarsData where Date_ID > '@{activity('last_load_date').output.value[0].last_load}' and Date_ID < '@{activity('Current_load_processed_date').output.value[0].max_date}'",
+                            "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "sink": {
+                        "type": "ParquetSink",
+                        "storeSettings": {
+                            "type": "AzureBlobFSWriteSettings",
+                            "copyBehavior": "FlattenHierarchy"
+                        },
+                        "formatSettings": {
+                            "type": "ParquetWriteSettings"
+                        }
+                    },
+                    "enableStaging": false,
+                    "translator": {
+                        "type": "TabularTranslator",
+                        "typeConversion": true,
+                        "typeConversionSettings": {
+                            "allowDataTruncation": true,
+                            "treatBooleanAsNumber": false
+                        }
+                    }
+                },
+                "inputs": [
+                    {
+                        "referenceName": "DS_SQL_DB",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "table_name": "SourceCarsData"
+                        }
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "DS_bronze_pq",
+                        "type": "DatasetReference"
+                    }
+                ]
+            },
+            {
+                "name": "last_load_date",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": {
+                            "value": "select * from water_table ",
+                            "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_SQL_DB",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "table_name": "water_table"
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "Current_load_processed_date",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": "select max(Date_ID) as max_date from SourceCarsData",
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_SQL_DB",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "table_name": "SourceCarsData"
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "Update WaterMark Table",
+                "type": "SqlServerStoredProcedure",
+                "dependsOn": [
+                    {
+                        "activity": "Incremental_",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "storedProcedureName": "[dbo].[UpdateWaterMarkTable]",
+                    "storedProcedureParameters": {
+                        "last_load": {
+                            "value": {
+                                "value": "@{activity('Current_load_processed_date').output.value[0].max_date}",
+                                "type": "Expression"
+                            },
+                            "type": "String"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_SQLDB",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Cleaning and transforming in Silver",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Update WaterMark Table",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/ayeshashaikdata@gmail.com/carsproject/silver_notebook"
+                },
+                "linkedServiceName": {
+                    "referenceName": "DS_ADB",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Gold_dim_model",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Cleaning and transforming in Silver",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/ayeshashaikdata@gmail.com/carsproject/GOLD_DIM_MODEL",
+                    "baseParameters": {
+                        "incremental_flag": "1"
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "DS_ADB",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Gold_dim_branch",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Cleaning and transforming in Silver",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/ayeshashaikdata@gmail.com/carsproject/GOLD_DIM_Branch",
+                    "baseParameters": {
+                        "incremental_flag": "1"
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "DS_ADB",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Gold_dim_Dealer",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Cleaning and transforming in Silver",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/ayeshashaikdata@gmail.com/carsproject/GOLD_DIM_Dealer",
+                    "baseParameters": {
+                        "incremental_flag": "1"
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "DS_ADB",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Gold_dim_Date",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Cleaning and transforming in Silver",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/ayeshashaikdata@gmail.com/carsproject/GOLD_DIM_Date",
+                    "baseParameters": {
+                        "incremental_flag": "1"
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "DS_ADB",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "Gold_factsales",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Gold_dim_model",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "Gold_dim_branch",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "Gold_dim_Dealer",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "Gold_dim_Date",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/ayeshashaikdata@gmail.com/carsproject/Fact_Sales"
+                },
+                "linkedServiceName": {
+                    "referenceName": "DS_ADB",
+                    "type": "LinkedServiceReference"
+                }
+            }
+        ],
+        "annotations": []
+    }
+}
