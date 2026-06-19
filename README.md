@@ -139,9 +139,5 @@ Approximately 50,000 records processed through the pipeline.
 ---
 
 ## Future Enhancements
-
-* SCD Type 2 Implementation
-* dbt Integration
 * CI/CD using Azure DevOps
 * Power BI Reporting Layer
-* Automated Monitoring and Alerting
